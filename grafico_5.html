@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <title>Grafico Payoff - Opzioni Dinamiche</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+  <h2>Inserisci un'opzione</h2>
+  <form id="optionForm" onsubmit="addOption(); return false;">
+    <label>Tipo:
+      <select id="tipo">
+        <option value="CALL">CALL</option>
+        <option value="PUT">PUT</option>
+      </select>
+    </label>
+    <label>Strike: <input type="number" id="strike" required></label>
+    <label>Premio: <input type="number" id="premio" required></label>
+    <label>Prezzo iniziale: <input type="number" id="iniziale" required></label>
+    <label>Posizione:
+      <select id="posizione">
+        <option value="LONG">LONG</option>
+        <option value="SHORT">SHORT</option>
+      </select>
+    </label>
+    <label>Scadenza (giorni): <input type="number" id="scadenza" required></label>
+    <button type="submit">Aggiungi Opzione</button>
+  </form>
+
+  <br>
+  <label>Data di riferimento (formato: AAAA-MM-GG): 
+    <input type="date" id="refDate" value="2025-06-01" onchange="updateChart()" />
+  </label>
+
+  <canvas id="payoffChart" width="1000" height="500"></canvas>
+
+  <script>
+    const spotPrices = Array.from({length: 201}, (_, i) => i); // 0 - 200
+    let options = [];
+
+    function daysToDate(days) {
+      const today = new Date();
+      const expiry = new Date(today.getTime() + days * 24 * 60 * 60 * 1000);
+      return expiry.toISOString().split('T')[0];
+    }
+
+    function addOption() {
+      const tipo = document.getElementById('tipo').value;
+      const strike = parseFloat(document.getElementById('strike').value);
+      const premio = parseFloat(document.getElementById('premio').value);
+      const posizione = document.getElementById('posizione').value;
+      const scadenzaGiorni = parseInt(document.getElementById('scadenza').value);
+      const prezzoIniziale = parseFloat(document.getElementById('iniziale').value);
+
+      const oggi = new Date();
+      const expiryDate = new Date(oggi.getTime() + scadenzaGiorni * 24 * 60 * 60 * 1000);
+
+      options.push({
+        type: tipo,
+        strike: strike,
+        premium: premio,
+        position: posizione,
+        expiry: expiryDate.toISOString().split('T')[0],
+        prezzoIniziale: prezzoIniziale
+      });
+
+      updateChart();
+      document.getElementById('optionForm').reset();
+    }
+
+    function calculatePayoff(option, S) {
+      let payoff = 0;
+      if (option.type === 'CALL') {
+        payoff = Math.max(S - option.strike, 0);
+      } else {
+        payoff = Math.max(option.strike - S, 0);
+      }
+      return option.position === 'LONG' ? payoff - option.premium : option.premium - payoff;
+    }
+
+    function updateChart() {
+      const selectedDate = new Date(document.getElementById('refDate').value);
+      const filteredOptions = options.filter(opt => new Date(opt.expiry) <= selectedDate);
+
+      const dataSets = [];
+      const globalPayoff = spotPrices.map(S => {
+        return filteredOptions.reduce((sum, opt) => sum + calculatePayoff(opt, S), 0);
+      });
+
+      // Opzioni singole
+      filteredOptions.forEach((opt, i) => {
+        const label = `${opt.position} ${opt.type} K=${opt.strike} (scad. ${opt.expiry})`;
+        const data = spotPrices.map(S => calculatePayoff(opt, S));
+        dataSets.push({
+          label: label,
+          data: data,
+          borderWidth: 1,
+          fill: false,
+          borderColor: `hsl(${(i * 60) % 360}, 70%, 50%)`,
+        });
+      });
+
+      // Totale
+      dataSets.push({
+        label: 'Payoff Totale (somma algebrica)',
+        data: globalPayoff,
+        borderWidth: 3,
+        borderDash: [5, 5],
+        fill: false,
+        borderColor: '#000000',
+      });
+
+      if (window.payoffChart) window.payoffChart.destroy();
+
+      const ctx = document.getElementById('payoffChart').getContext('2d');
+      window.payoffChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: spotPrices,
+          datasets: dataSets,
+        },
+        options: {
+          responsive: true,
+          scales: {
+            x: { title: { display: true, text: 'Prezzo del sottostante (S)' } },
+            y: { title: { display: true, text: 'Payoff' } },
+          },
+          plugins: {
+            title: {
+              display: true,
+              text: 'Grafico Payoff – Inserimento Manuale e Scadenze Diverse',
+              font: { size: 18 }
+            },
+            tooltip: {
+              mode: 'index',
+              intersect: false,
+            },
+            legend: {
+              position: 'bottom'
+            }
+          },
+          interaction: {
+            mode: 'nearest',
+            axis: 'x',
+            intersect: false
+          }
+        }
+      });
+    }
+  </script>
+</body>
+</html>
